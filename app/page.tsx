@@ -1,113 +1,248 @@
-import Image from "next/image";
+"use client";
+import { useState, useEffect, useRef, FormEvent, ChangeEvent } from "react";
+import Textarea from "react-textarea-autosize";
+import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
+import RateReviewIcon from "@mui/icons-material/RateReview";
+import { formatDistanceToNow, parseISO } from "date-fns";
 
+interface Message {
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
+// Define your component
 export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState<string>("");
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const messageEndRef = useRef<HTMLDivElement>(null);
+
+  // Function to scroll to the bottom of messages
+  const scrollToBottom = () => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    // Load messages from local storage on initial render
+    const storedMessages = JSON.parse(localStorage.getItem("messages") || "[]");
+    setMessages(storedMessages);
+    scrollToBottom();
+  }, []);
+
+  useEffect(() => {
+    // Save messages to local storage whenever messages state changes
+    localStorage.setItem("messages", JSON.stringify(messages));
+    scrollToBottom();
+  }, [messages]);
+
+  // Handle input change
+  const handleInputChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(event.target.value);
+  };
+
+  // Handle form submission
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!input.trim()) return;
+
+    const newMessage: Message = { 
+      role: "user", 
+      content: input.trim(), 
+      timestamp: new Date().toISOString() 
+    };
+    setMessages((prevMessages) => [...prevMessages, newMessage]);
+
+    setInput("");
+
+    try {
+      const response = await fetch("/api", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messages: [...messages, newMessage] }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch the response from the server");
+      }
+
+      const data = await response.json();
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        { role: "bot", content: data.text, timestamp: new Date().toISOString() },
+      ]);
+    } catch (error) {
+      console.error("Error:", error);
+    }
+  };
+
+  // Clear all messages
+  const clearMessages = () => {
+    setMessages([]);
+    localStorage.removeItem("messages");
+  };
+
+  // Helper function to format date labels
+  const formatDateLabel = (date: string) => {
+    const parsedDate = parseISO(date);
+    const now = new Date();
+    const daysAgo = Math.floor((now.getTime() - parsedDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysAgo === 0) return "Today";
+    if (daysAgo === 1) return "Yesterday";
+    if (daysAgo <= 3) return `${daysAgo} days ago`;
+    if (daysAgo <= 10) return `${daysAgo} days ago`;
+    if (daysAgo <= 30) return `${daysAgo} days ago`;
+    return formatDistanceToNow(parsedDate, { addSuffix: true });
+  };
+
+  // Return JSX structure
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
+    <div className="flex min-h-screen bg-neutral-800">
+      <div className="relative">
+        <div
+          className={`flex flex-col ${
+            isSidebarOpen ? "w-64" : "w-0"
+          } bg-black min-h-screen transition-all duration-300 overflow-hidden`}
+        >
+          <div className="flex justify-between items-center p-2">
+            <ViewSidebarIcon
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="text-white cursor-pointer"
+              fontSize="large"
             />
-          </a>
+            {isSidebarOpen && (
+              <RateReviewIcon
+                className="text-white cursor-pointer"
+                fontSize="large"
+                onClick={clearMessages}
+              />
+            )}
+          </div>
+          {isSidebarOpen && (
+            <>
+              {/* <h2 className="text-white text-xl mb-4 px-4">History</h2> */}
+              <div className="px-4">
+                {messages.length ? (
+                  messages.map((message, index) => (
+                    <div key={index} className="mb-2">
+                      {message.role === "user" && (
+                        <>
+                          {(index === 0 ||
+                            formatDateLabel(messages[index - 1].timestamp) !==
+                              formatDateLabel(message.timestamp)) && (
+                            <div className="py-2">
+                              <p className="text-sm text-gray-500 pl-8">
+                                {formatDateLabel(message.timestamp)}
+                              </p>
+                            </div>
+                          )}
+                          <p className="text-sm text-gray-400">
+                            {message.content.length > 45
+                              ? `${message.content.substring(0, 42)}...`
+                              : message.content}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-400">No history available</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
+        {!isSidebarOpen && (
+          <ViewSidebarIcon
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="text-white cursor-pointer absolute top-4 left-4"
+            fontSize="large"
+          />
+        )}
       </div>
-
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
+      <div className="flex flex-col w-full">
+        <div className="flex-1 pb-5 pt-5 space-y-5 overflow-y-auto px-4">
+          {messages.length ? (
+            messages.map((message, index) => (
+              <div key={index} className="w-full flex justify-center">
+                <div
+                  className={`flex gap-x-2 max-w-xl w-full ${
+                    message.role === "user" ? "" : "flex-row-reverse"
+                  }`}
+                >
+                  <div
+                    className={`h-12 w-12 rounded-lg ${
+                      message.role === "user" ? "bg-gray-500" : "bg-teal-500"
+                    }`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      className="w-full h-full text-white p-1"
+                    >
+                      <path d="M16.5 7.5h-9v9h9v-9z" />
+                      <path
+                        fillRule="evenodd"
+                        d={`M8.25 2.25A.75.75 0 019 3v.75h2.25V3a.75.75 0 011.5 0v.75H15V3a.75.75 0 011.5 0v.75h.75a3 3 0 013 3v.75H21A.75.75 0 0121 9h-.75v2.25H21a.75.75 0 010 1.5h-.75V15H21a.75.75 0 010 1.5h-.75v.75a3 3 0 01-3 3h-.75V21a.75.75 0 01-1.5 0v-.75h-2.25V21a.75.75 0 01-1.5 0v-.75H9V21a.75.75 0 01-1.5 0v-.75h-.75a3 3 0 01-3-3v-.75H3A.75.75 0 013 15h.75v-2.25H3a.75.75 0 010-1.5h.75V9H3a.75.75 0 010-1.5h.75v-.75a3 3 0 013-3h.75V3a.75.75 0 01.75-.75z`}
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <div className="w-full">
+                    <p
+                      className={`rounded-lg p-3 text-sm break-words ${
+                        message.role === "user"
+                          ? "border-gray-500 bg-gray-700 text-white"
+                          : "border-teal-500 bg-teal-700 text-white"
+                      } border-2`}
+                    >
+                      {message.content}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="w-full flex justify-center items-center h-full">
+              <h1 className="font-bold text-3xl text-white">
+                Please use the input field below ⬇️
+              </h1>
+            </div>
+          )}
+          <div ref={messageEndRef} />
+        </div>
+        <form onSubmit={handleSubmit} className="p-5">
+           <div className="relative flex items-center justify-center gap-5">
+             <Textarea
+              id="messageInput"
+              tabIndex={0}
+              required
+              rows={1}
+              value={input}
+              onChange={handleInputChange}
+              autoFocus
+              placeholder="Send message..."
+              spellCheck={false}
+              className="w-3/4 focus:outline-none shadow-teal-700 shadow-xl placeholder:text-gray-200 text-sm text-white p-5 pr-16 rounded-xl bg-neutral-600"
+            />
+            <button type="submit" className="relative bg-teal-500 p-2 rounded-lg ">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className="w-7 h-7 text-white"
+              >
+                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+              </svg>
+            </button>
+          </div>
+        </form>
       </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+    </div>
   );
 }
+
+
